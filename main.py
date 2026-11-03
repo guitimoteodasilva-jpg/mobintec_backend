@@ -127,7 +127,7 @@ async def analisar(
     image: UploadFile = File(...),
     capturadoEm: str = Form(...),
     requisicaoId: str = Form(...),
-    authorization: str | None = Header(default=None),
+     authorization: str | None = Header(default=None, alias="X-App-Token"),
 ) -> dict:
     token = os.environ.get("APP_ACCESS_TOKEN", "")
 
@@ -149,7 +149,7 @@ async def analisar(
     jpeg = await image.read(MAX_BYTES + 1)
     if len(jpeg) > MAX_BYTES:
         raise HTTPException(413, "Imagem grande demais.")
-
+      
     try:
         mensagem = await analisar_assentos(jpeg)
     except RoboflowTimeout:
