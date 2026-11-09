@@ -127,22 +127,7 @@ async def analisar(
     image: UploadFile = File(...),
     capturadoEm: str = Form(...),
     requisicaoId: str = Form(...),
-     authorization: str | None = Header(default=None, alias="X-App-Token"),
 ) -> dict:
-    token = os.environ.get("APP_ACCESS_TOKEN", "")
-
-    if not token:
-        raise HTTPException(503, "Acesso ao aplicativo não configurado.")
-
-    esperado = "Bearer " + token
-    recebido = authorization or ""
-
-    if not secrets.compare_digest(
-        recebido.encode("utf-8"),
-        esperado.encode("utf-8"),
-    ):
-        raise HTTPException(401, "Acesso não autorizado.")
-
     if image.content_type != "image/jpeg":
         raise HTTPException(415, "Envie a imagem em JPEG.")
 
