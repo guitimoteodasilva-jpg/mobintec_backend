@@ -1,4 +1,5 @@
 fastapi
-uvicorn[standard]
+uvicorn
 python-multipart
 inference-sdk
+Pillow
