@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import sys
 import threading
@@ -8,8 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 
-# Provide an inert SDK module so importing main never requires the SDK,
-# credentials, or network access in this test suite.
+# SDK fictício: importar main não precisa de credenciais nem de rede.
 inference_sdk = types.ModuleType("inference_sdk")
 inference_sdk.InferenceConfiguration = type(
     "InferenceConfiguration", (), {}
@@ -40,8 +40,10 @@ class FakeClient:
         self.result = result
         self.started = started
         self.release = release
+        self.kwargs = None
 
     def run_workflow(self, **kwargs):
+        self.kwargs = kwargs
         if self.started is not None:
             self.started.set()
         if self.release is not None:
@@ -103,6 +105,30 @@ def test_quick_mock_response_and_durations(monkeypatch, caplog):
     )
     assert any(
         "etapa=tratamento_resposta" in msg and "status=ok" in msg
+        for msg in messages
+    )
+
+
+def test_base64_and_run_workflow_diagnostics_use_fake_client(
+    monkeypatch, caplog
+):
+    fake_client = FakeClient()
+    monkeypatch.setattr(main, "cliente", lambda: fake_client)
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    result = main.chamar_workflow(b"fake-image")
+
+    assert result == MOCK_RESULT
+    assert fake_client.kwargs["images"] == {
+        "image": base64.b64encode(b"fake-image").decode("ascii")
+    }
+    messages = diagnostic_messages(caplog)
+    assert any(
+        "etapa=codificacao_base64" in msg and "status=ok" in msg
+        for msg in messages
+    )
+    assert any(
+        "etapa=run_workflow" in msg and "status=ok" in msg
         for msg in messages
     )
 
@@ -202,3 +228,4 @@ def test_response_treatment_failure_is_logged(monkeypatch, caplog):
         and "tipo_erro=RuntimeError" in msg
         for msg in messages
     )
+
