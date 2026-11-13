@@ -131,20 +131,44 @@ def chamar_workflow(jpeg):
     status = "erro"
 
     try:
-        resultado = cliente().run_workflow(
-            workspace_name=WORKSPACE,
-            workflow_id=WORKFLOW_ID,
-            images={
-                "image": base64.b64encode(jpeg).decode("ascii")
-            },
-            excluded_fields=[
-                "output_image",
-                "predictions",
-                "assentos",
-            ],
-        )
-        status = "ok"
-        return resultado
+        workflow_client = cliente()
+
+        inicio_base64 = time.monotonic()
+        status_base64 = "erro"
+        try:
+            imagem_base64 = base64.b64encode(jpeg).decode("ascii")
+            status_base64 = "ok"
+        finally:
+            log_diagnostico.info(
+                "diagnostico etapa=codificacao_base64 "
+                "duracao_ms=%.0f status=%s",
+                (time.monotonic() - inicio_base64) * 1000,
+                status_base64,
+            )
+
+        inicio_run_workflow = time.monotonic()
+        status_workflow = "erro"
+        try:
+            resultado = workflow_client.run_workflow(
+                workspace_name=WORKSPACE,
+                workflow_id=WORKFLOW_ID,
+                images={"image": imagem_base64},
+                excluded_fields=[
+                    "output_image",
+                    "predictions",
+                    "assentos",
+                ],
+            )
+            status_workflow = "ok"
+            status = "ok"
+            return resultado
+        finally:
+            log_diagnostico.info(
+                "diagnostico etapa=run_workflow "
+                "duracao_ms=%.0f status=%s",
+                (time.monotonic() - inicio_run_workflow) * 1000,
+                status_workflow,
+            )
 
     finally:
         log_diagnostico.info(
