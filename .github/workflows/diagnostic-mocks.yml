@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - diagnostico/duracoes-workflow
+      - diagnostico/medir-latencias-workflow
 
 permissions:
   contents: read
