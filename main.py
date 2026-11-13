@@ -148,7 +148,8 @@ def chamar_workflow(jpeg):
 
     finally:
         log_diagnostico.info(
-            "diagnostico etapa=run_workflow duracao_ms=%.0f status=%s",
+            "diagnostico etapa=preparacao_local_e_chamada_run_workflow "
+            "duracao_ms=%.0f status=%s",
             (time.monotonic() - inicio) * 1000,
             status,
         )
@@ -213,8 +214,8 @@ def mensagem_segura(resultado):
     )
 
 
-def consumir_excecao(tarefa, inicio, estado):
-    # Registra a conclusão e o estado observado ao tratar o timeout.
+def consumir_excecao(tarefa, inicio):
+    # Registra somente o desfecho da tarefa, sem inferir a ordem do 504.
     if tarefa.cancelled():
         status = "cancelada"
         tipo_erro = "nenhum"
@@ -225,11 +226,8 @@ def consumir_excecao(tarefa, inicio, estado):
 
     log_diagnostico.info(
         "diagnostico etapa=tarefa_inferencia_concluida "
-        "duracao_ms=%.0f "
-        "tarefa_pendente_ao_tratar_timeout=%s "
-        "status=%s tipo_erro=%s",
+        "duracao_ms=%.0f status=%s tipo_erro=%s",
         (time.monotonic() - inicio) * 1000,
-        estado["tarefa_pendente_ao_tratar_timeout"],
         status,
         tipo_erro,
     )
@@ -278,7 +276,6 @@ async def analisar_imagem(jpeg):
     quantidade_uso += 1
 
     inicio_tarefa = time.monotonic()
-    estado_tarefa = {"tarefa_pendente_ao_tratar_timeout": None}
     tarefa = asyncio.create_task(
         asyncio.to_thread(chamar_workflow, jpeg)
     )
@@ -288,7 +285,6 @@ async def analisar_imagem(jpeg):
         lambda concluida: consumir_excecao(
             concluida,
             inicio_tarefa,
-            estado_tarefa,
         )
     )
 
@@ -320,8 +316,11 @@ async def analisar_imagem(jpeg):
         return mensagem
 
     except asyncio.TimeoutError:
-        estado_tarefa["tarefa_pendente_ao_tratar_timeout"] = (
-            not tarefa.done()
+        log_diagnostico.warning(
+            "diagnostico etapa=timeout duracao_ms=%.0f "
+            "tarefa_pendente=%s",
+            (time.monotonic() - inicio_tarefa) * 1000,
+            not tarefa.done(),
         )
         raise HTTPException(
             status_code=504,
