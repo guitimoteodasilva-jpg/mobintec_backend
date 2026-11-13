@@ -80,6 +80,7 @@ ORIGENS = [
 ]
 
 log = logging.getLogger("mobintec")
+log_diagnostico = logging.getLogger("uvicorn.error")
 
 
 # ---------- Aplicação ----------
@@ -126,18 +127,31 @@ def cliente():
 
 
 def chamar_workflow(jpeg):
-    return cliente().run_workflow(
-        workspace_name=WORKSPACE,
-        workflow_id=WORKFLOW_ID,
-        images={
-            "image": base64.b64encode(jpeg).decode("ascii")
-        },
-        excluded_fields=[
-            "output_image",
-            "predictions",
-            "assentos",
-        ],
-    )
+    inicio = time.monotonic()
+    status = "erro"
+
+    try:
+        resultado = cliente().run_workflow(
+            workspace_name=WORKSPACE,
+            workflow_id=WORKFLOW_ID,
+            images={
+                "image": base64.b64encode(jpeg).decode("ascii")
+            },
+            excluded_fields=[
+                "output_image",
+                "predictions",
+                "assentos",
+            ],
+        )
+        status = "ok"
+        return resultado
+
+    finally:
+        log_diagnostico.info(
+            "diagnostico etapa=run_workflow duracao_ms=%.0f status=%s",
+            (time.monotonic() - inicio) * 1000,
+            status,
+        )
 
 
 def mensagem_segura(resultado):
@@ -199,13 +213,26 @@ def mensagem_segura(resultado):
     )
 
 
-def consumir_excecao(tarefa):
-    # Uma chamada remota pode terminar depois do timeout.
-    if not tarefa.cancelled():
-        try:
-            tarefa.exception()
-        except Exception:
-            pass
+def consumir_excecao(tarefa, inicio, estado):
+    # Registra a conclusão e o estado observado ao tratar o timeout.
+    if tarefa.cancelled():
+        status = "cancelada"
+        tipo_erro = "nenhum"
+    else:
+        erro = tarefa.exception()
+        status = "erro" if erro else "ok"
+        tipo_erro = type(erro).__name__ if erro else "nenhum"
+
+    log_diagnostico.info(
+        "diagnostico etapa=tarefa_inferencia_concluida "
+        "duracao_ms=%.0f "
+        "tarefa_pendente_ao_tratar_timeout=%s "
+        "status=%s tipo_erro=%s",
+        (time.monotonic() - inicio) * 1000,
+        estado["tarefa_pendente_ao_tratar_timeout"],
+        status,
+        tipo_erro,
+    )
 
 
 async def analisar_imagem(jpeg):
@@ -250,12 +277,20 @@ async def analisar_imagem(jpeg):
     ultima_inicio = agora
     quantidade_uso += 1
 
+    inicio_tarefa = time.monotonic()
+    estado_tarefa = {"tarefa_pendente_ao_tratar_timeout": None}
     tarefa = asyncio.create_task(
         asyncio.to_thread(chamar_workflow, jpeg)
     )
 
     tarefa_inferencia = tarefa
-    tarefa.add_done_callback(consumir_excecao)
+    tarefa.add_done_callback(
+        lambda concluida: consumir_excecao(
+            concluida,
+            inicio_tarefa,
+            estado_tarefa,
+        )
+    )
 
     try:
         # O timeout não cancela a execução remota.
@@ -264,9 +299,30 @@ async def analisar_imagem(jpeg):
             timeout=PRAZO_TOTAL_S,
         )
 
-        return mensagem_segura(resultado)
+        inicio_tratamento = time.monotonic()
+
+        try:
+            mensagem = mensagem_segura(resultado)
+        except Exception as erro:
+            log_diagnostico.warning(
+                "diagnostico etapa=tratamento_resposta "
+                "duracao_ms=%.0f status=erro tipo_erro=%s",
+                (time.monotonic() - inicio_tratamento) * 1000,
+                type(erro).__name__,
+            )
+            raise
+
+        log_diagnostico.info(
+            "diagnostico etapa=tratamento_resposta "
+            "duracao_ms=%.0f status=ok",
+            (time.monotonic() - inicio_tratamento) * 1000,
+        )
+        return mensagem
 
     except asyncio.TimeoutError:
+        estado_tarefa["tarefa_pendente_ao_tratar_timeout"] = (
+            not tarefa.done()
+        )
         raise HTTPException(
             status_code=504,
             detail=(
