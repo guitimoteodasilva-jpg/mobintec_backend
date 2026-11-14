@@ -202,7 +202,9 @@ def test_response_treatment_failure_is_logged(monkeypatch, caplog):
         and "tipo_erro=RuntimeError" in msg
         for msg in messages
     )
-  def test_base64_e_run_workflow_com_cliente_ficticio(monkeypatch, caplog):
+
+
+def test_base64_e_run_workflow_com_cliente_ficticio(monkeypatch, caplog):
     class ClienteFicticio:
         def run_workflow(self, **kwargs):
             assert kwargs["images"] == {"image": "ZmFrZS1pbWFnZQ=="}
