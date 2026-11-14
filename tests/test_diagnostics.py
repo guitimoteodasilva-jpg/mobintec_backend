@@ -202,3 +202,25 @@ def test_response_treatment_failure_is_logged(monkeypatch, caplog):
         and "tipo_erro=RuntimeError" in msg
         for msg in messages
     )
+
+
+def test_base64_e_run_workflow_com_cliente_ficticio(monkeypatch, caplog):
+    class ClienteFicticio:
+        def run_workflow(self, **kwargs):
+            assert kwargs["images"] == {"image": "ZmFrZS1pbWFnZQ=="}
+            return MOCK_RESULT
+
+    monkeypatch.setattr(main, "cliente", lambda: ClienteFicticio())
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    assert main.chamar_workflow(b"fake-image") == MOCK_RESULT
+
+    mensagens = diagnostic_messages(caplog)
+    assert any(
+        "etapa=codificacao_base64" in msg and "status=ok" in msg
+        for msg in mensagens
+    )
+    assert any(
+        "etapa=run_workflow" in msg and "status=ok" in msg
+        for msg in mensagens
+    )
